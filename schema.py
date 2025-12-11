@@ -15,3 +15,18 @@ class TechnicianRequest(BaseModel):
 class UpdateStatusRequest(BaseModel):
     assignment_id: int
     status: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+    mob_no: str | None = None
+    address: str | None = None
+
+class ViewBookingRequest(BaseModel):
+    user_id: UUID
+    booking_id: int

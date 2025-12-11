@@ -14,7 +14,7 @@ class Technician(BaseModel):
     created_at: datetime
     name: str
     phone: Optional[str] = None
-    provider_role: Optional[str] = None # Snake_case
+    provider_role_id: Optional[str] = None # Snake_case
 
 class Service(BaseModel):
     id: int
@@ -30,6 +30,7 @@ class Assignment(BaseModel):
     created_at: datetime
     tech_id: int # Snake_case
     service_id: int # Snake_case
+    booking_id: int # Add booking_id
     scheduled_at: Optional[datetime] = None # Snake_case
 
 class Booking(BaseModel):
