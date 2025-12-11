@@ -1,13 +1,15 @@
 import os
-from sqlmodel import create_engine, Session
+from supabase import create_client, Client
+from dotenv import load_dotenv
 
-# Use DATABASE_URL from environment for Postgres connection
-# Example: postgresql://user:password@host:port/database
-database_url = os.environ.get("DATABASE_URL", "sqlite:///database.db") 
+load_dotenv()
 
-engine = create_engine(database_url, echo=True)
+url: str = os.environ.get("SUPABASE_URL")
+key: str = os.environ.get("SUPABASE_KEY")
 
-def get_session():
-    with Session(engine) as session:
-        yield session
+if not url or not key:
+    # Fail gracefully or warn if env vars are missing, but for now let's raise/print
+    print("Warning: SUPABASE_URL or SUPABASE_KEY not set in environment.")
+    print(f"DEBUG: URL={url}, KEY={key}")
 
+supabase: Client = create_client(url or "", key or "")
