@@ -8,7 +8,7 @@ from models import Service, Assignment, Technician, UserProfile, Booking, Notifi
 from schema import BookServiceRequest, UserRequest, TechnicianRequest, UpdateStatusRequest, LoginRequest, RegisterRequest, ViewBookingRequest, CancelBookingRequest
 from db import supabase
 from uuid import UUID
-from utils import send_mail
+from utils import send_email
 
 app = FastAPI(title="Fixel Backend", docs_url="/api/docs", redoc_url="/api/redoc")
 
