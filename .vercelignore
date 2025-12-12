@@ -1,0 +1,4 @@
+tests/
+build/
+*.py
+!api/dist/main.py

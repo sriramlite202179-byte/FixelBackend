@@ -30,3 +30,7 @@ class RegisterRequest(BaseModel):
 class ViewBookingRequest(BaseModel):
     user_id: UUID
     booking_id: int
+
+class CancelBookingRequest(BaseModel):
+    user_id: UUID
+    booking_id: int

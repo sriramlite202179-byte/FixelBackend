@@ -1,12 +1,121 @@
+# AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
+# Source: D:\application\project2\FixelBackend
+
+
+# --- MODULE: db (db.py) ---
+import os
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+load_dotenv()
+
+url: str = os.environ.get("SUPABASE_URL")
+key: str = os.environ.get("SUPABASE_KEY")
+
+if not url or not key:
+    # Fail gracefully or warn if env vars are missing, but for now let's raise/print
+    print("Warning: SUPABASE_URL or SUPABASE_KEY not set in environment.")
+    print(f"DEBUG: URL={url}, KEY={key}")
+
+supabase: Client = create_client(url or "", key or "")
+
+# --- MODULE: models (models.py) ---
+from datetime import datetime
+from typing import Optional
+from uuid import UUID
+from pydantic import BaseModel
+
+class UserProfile(BaseModel):
+    id: UUID
+    name: str
+    mob_no: Optional[str] = None # Assuming snake_case consistency
+    address: Optional[str] = None
+
+class Technician(BaseModel):
+    id: int
+    created_at: datetime
+    name: str
+    phone: Optional[str] = None
+    provider_role_id: Optional[str] = None # Snake_case
+
+class Service(BaseModel):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    name: str
+    price: int
+    description: Optional[str] = None
+    provider_role_id: Optional[str] = None # Snake_case
+
+class Assignment(BaseModel):
+    id: int
+    created_at: datetime
+    tech_id: int # Snake_case
+    service_id: int # Snake_case
+    booking_id: int # Add booking_id
+    scheduled_at: Optional[datetime] = None # Snake_case
+
+class Booking(BaseModel):
+    id: int
+    created_at: datetime
+    user_id: UUID
+    service_id: int
+    scheduled_at: datetime
+    assignment_id: Optional[int] = None
+    status: Optional[str] = "pending"
+
+class Notification(BaseModel):
+    id: int
+    created_at: datetime
+    user_id: UUID
+    title: str
+    content: Optional[str] = None
+
+# --- MODULE: schema (schema.py) ---
+from pydantic import BaseModel
+from uuid import UUID
+
+class BookServiceRequest(BaseModel):
+    service_id: int
+    user_id: UUID
+    scheduled_at: str
+
+class UserRequest(BaseModel):
+    user_id: UUID
+
+class TechnicianRequest(BaseModel):
+    tech_id: int
+
+class UpdateStatusRequest(BaseModel):
+    assignment_id: int
+    status: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+    mob_no: str | None = None
+    address: str | None = None
+
+class ViewBookingRequest(BaseModel):
+    user_id: UUID
+    booking_id: int
+
+class CancelBookingRequest(BaseModel):
+    user_id: UUID
+    booking_id: int
+
+# --- MODULE: main (main.py) ---
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 import os
 import smtplib
 from email.message import EmailMessage
 from pydantic import BaseModel
 from typing import List, Optional, Any, Dict
-from models import Service, Assignment, Technician, UserProfile, Booking, Notification
-from schema import BookServiceRequest, UserRequest, TechnicianRequest, UpdateStatusRequest, LoginRequest, RegisterRequest, ViewBookingRequest, CancelBookingRequest
-from db import supabase
 from uuid import UUID
 
 app = FastAPI(title="Fixel Backend")
