@@ -10,7 +10,7 @@ from db import supabase
 from uuid import UUID
 from utils import send_mail
 
-app = FastAPI(title="Fixel Backend")
+app = FastAPI(title="Fixel Backend", docs_url="/api/docs", redoc_url="/api/redoc")
 
 # --- User Functions ---
 
