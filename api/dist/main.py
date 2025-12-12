@@ -149,7 +149,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Any, Dict
 from uuid import UUID
 
-app = FastAPI(title="Fixel Backend", docs_url="/api/docs", redoc_url="/api/redoc")
+app = FastAPI(title="Fixel Backend", docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 
 # --- User Functions ---
 
