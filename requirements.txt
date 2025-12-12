@@ -290,6 +290,10 @@ pyjwt==2.10.1 \
 pytest==9.0.2 \
     --hash=sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b \
     --hash=sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11
+python-dotenv==1.2.1 \
+    --hash=sha256:42667e897e16ab0d66954af0e60a9caa94f0fd4ecf3aaf6d2d260eec1aa36ad6 \
+    --hash=sha256:b81ee9561e9ca4004139c6cbba3a238c32b03e4894671e181b671e8cb8425d61
+    # via fixelbackend
 realtime==2.25.1 \
     --hash=sha256:0ecd710c37dc42ccb01be5eb25146b249a2b73668da22fd93eae776869db57b6 \
     --hash=sha256:3af1da47391cc0da947b4f3850f8e0403ec9be0988c14c2fa3fe66a9458251be
