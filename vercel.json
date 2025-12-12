@@ -6,9 +6,6 @@
             "memory": 256
         }
     },
-    "devCommand": "cd frontend && yarn dev",
-    "installCommand": "cd frontend && yarn install",
-    "buildCommand": "cd frontend && yarn run build",
     "rewrites": [
         {
             "source": "/api/(.*)",
@@ -27,6 +24,5 @@
             "destination": "/"
         }
     ],
-    "trailingSlash": false,
-    "outputDirectory": "frontend/dist"
+    "trailingSlash": false
 }
