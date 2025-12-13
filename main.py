@@ -144,7 +144,7 @@ async def cancel_booking(data: CancelBookingRequest, user_id: str = Depends(veri
 
     return {"message": "Booking cancelled successfully", "booking": update_res.data[0]}
 
-async def assign_technician(booking_id: int, service_id: int, scheduled_at: str1):
+async def assign_technician(booking_id: int, service_id: int, scheduled_at: str):
     sbase = await get_supabase()
     # 1. Get Service to find provider_role_id
     service_res = await sbase.table("service").select("provider_role_id").eq("id", service_id).execute()
