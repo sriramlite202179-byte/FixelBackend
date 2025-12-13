@@ -10,7 +10,7 @@ class UserProfile(BaseModel):
     address: Optional[str] = None
 
 class Technician(BaseModel):
-    id: int
+    id: UUID
     created_at: datetime
     name: str
     phone: Optional[str] = None
@@ -28,7 +28,7 @@ class Service(BaseModel):
 class Assignment(BaseModel):
     id: int
     created_at: datetime
-    tech_id: int # Snake_case
+    techie_id: UUID # Snake_case
     service_id: int # Snake_case
     booking_id: int # Add booking_id
     scheduled_at: Optional[datetime] = None # Snake_case

@@ -1,5 +1,5 @@
 import os
-from supabase import create_client, Client
+from supabase import create_client, Client, create_async_client, AsyncClient
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,4 +12,5 @@ if not url or not key:
     print("Warning: SUPABASE_URL or SUPABASE_KEY not set in environment.")
     print(f"DEBUG: URL={url}, KEY={key}")
 
-supabase: Client = create_client(url or "", key or "")
+async def get_supabase():
+    return await create_async_client(url or "", key or "")

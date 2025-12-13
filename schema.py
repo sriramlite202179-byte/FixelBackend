@@ -10,7 +10,7 @@ class UserRequest(BaseModel):
     user_id: UUID
 
 class TechnicianRequest(BaseModel):
-    tech_id: int
+    techie_id: UUID
 
 class UpdateStatusRequest(BaseModel):
     assignment_id: int
@@ -34,3 +34,14 @@ class ViewBookingRequest(BaseModel):
 class CancelBookingRequest(BaseModel):
     user_id: UUID
     booking_id: int
+
+class TechnicianRegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+    phone: str | None = None
+    provider_role_id: str | None = None
+
+class TechnicianLoginRequest(BaseModel):
+    email: str
+    password: str
