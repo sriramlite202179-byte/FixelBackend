@@ -252,14 +252,17 @@ async def register_technician(data: TechnicianRegisterRequest, sbase: AsyncClien
 
 @app.post("/api/funcs/technician.login")
 async def login_technician(data: TechnicianLoginRequest, sbase: AsyncClient = Depends(get_supabase)):
+
     try:
         auth_res = await sbase.auth.sign_in_with_password({
             "email": data.email,
             "password": data.password
         })
-        
+
+    
+
         # Check if actually a technician
-        tech_res = await sbase.table("technician").select("*").execute()
+        tech_res = await sbase.table("technician").select("id").eq("id", auth_res.user.id).execute()
         print(tech_res.data, auth_res.user.id)
         if not tech_res.data:
              raise HTTPException(status_code=403, detail="User is not a technician")
