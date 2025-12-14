@@ -4,8 +4,8 @@ import smtplib
 from email.message import EmailMessage
 from pydantic import BaseModel
 from typing import List, Optional, Any, Dict
-from models import Service, Assignment, Technician, UserProfile, Booking, Notification
-from schema import BookServiceRequest, UserRequest, TechnicianRequest, UpdateStatusRequest, LoginRequest, RegisterRequest, ViewBookingRequest, CancelBookingRequest, TechnicianRegisterRequest, TechnicianLoginRequest
+from models import Service, Assignment, Technician, UserProfile, Booking, Notification, AssignmentRequest
+from schema import BookServiceRequest, UserRequest, TechnicianRequest, UpdateStatusRequest, LoginRequest, RegisterRequest, ViewBookingRequest, CancelBookingRequest, TechnicianRegisterRequest, TechnicianLoginRequest, AssignmentResponseRequest
 from db import get_supabase, AsyncClient
 from uuid import UUID
 from utils import send_email, verify_user, verify_technician
@@ -72,8 +72,7 @@ async def login_user(data: LoginRequest, sbase: AsyncClient = Depends(get_supaba
             "session": auth_res.session
         }
     except Exception as e:
-        print(e)
-        if "email not confirmed" in str(e):
+        if "email not confirmed".lower() in str(e).lower():
             raise HTTPException(status_code=403, detail="Email not confirmed. Please check your inbox to verify your email address.")
 
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -153,32 +152,47 @@ async def assign_technician(booking_id: int, service_id: int, scheduled_at: str)
     provider_role = service_res.data[0]["provider_role_id"]
 
     # 2. Find Technicians with matching provider_role
-    # Using 'like' or 'eq' depending on exact match. Assuming exact match for now.
     tech_res = await sbase.table("technician").select("id").eq("provider_role_id", provider_role).execute()
     
     valid_techs = tech_res.data
     if not valid_techs:
-        # No tech found
+        return None
+        
+    # 3. Check existing AssignmentRequests to filter out rejected techs
+    history_res = await sbase.table("assignment_request").select("techie_id, status").eq("booking_id", booking_id).execute()
+    rejected_tech_ids = {h["techie_id"] for h in history_res.data if h["status"] in ["rejected", "expired"]}
+    
+    eligible_techs = [t for t in valid_techs if t["id"] not in rejected_tech_ids]
+
+    if not eligible_techs:
+        # No eligible tech found (all rejected or none available)
         return None
     
-    # 3. Simple Algorithm: Pick first available (or just first one for MVP)
-    # Ideally check overlaps, but user said "pick a technician... I let you handle implementation"
-    selected_tech = valid_techs[0]
+    # 4. Pick first available
+    selected_tech = eligible_techs[0]
     
-    # 4. Create Assignment
-    assignment_data = {
+    # 5. Create AssignmentRequest (Offer)
+    # Status default is pending
+    request_data = {
         "techie_id": selected_tech["id"],
-        "service_id": service_id,
         "booking_id": booking_id,
-        "scheduled_at": scheduled_at
+        "status": "pending"
     }
-    assign_res = await sbase.table("assignment").insert(assignment_data).execute()
     
-    if assign_res.data:
-        assignment = assign_res.data[0]
-        # 5. Update Booking status
-        await sbase.table("bookings").update({"status": "assigned", "assignment_id": assignment["id"]}).eq("id", booking_id).execute()
-        return assignment
+    # We don't have service_id or scheduled_at in AssignmentRequest schema I Defined in plan?
+    # Wait, the user said "techie_id, booking_id, acceptance_status, created_at". 
+    # I should stick to that schema for AssignmentRequest.
+    # The 'Assignment' table still holds service/scheduled info, but we create that LATER.
+    
+    req_res = await sbase.table("assignment_request").insert(request_data).execute()
+    
+    if req_res.data:
+        # 6. Update Booking status
+        # We don't have an 'assignment_id' yet to link in the booking table because Assignment doesn't exist.
+        # But we might want to know it's "assigned/offered".
+        # Let's just set status="assigned".
+        await sbase.table("bookings").update({"status": "assigned"}).eq("id", booking_id).execute()
+        return req_res.data[0]
     
     return None
 
@@ -284,6 +298,15 @@ async def view_technician_profile(techie_id: str = Depends(verify_technician), s
     response = await sbase.table("technician").select("*").eq("id", techie_id).execute()
     return response.data[0] if response.data else None
 
+@app.post("/api/funcs/technician.viewAssignmentRequests")
+async def view_assignment_requests(techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
+    # Fetch pending requests
+    # We might want to join booking and service info so they can see what it is
+    # Supabase join syntax: select(*, booking:booking_id(*, service:service_id(*))) - nested might be tricky deep, but let's try shallow first or just booking.
+    # Actually booking -> service_id is in Booking table.
+    response = await sbase.table("assignment_request").select("*, booking:booking_id(*, service:service_id(*))").eq("techie_id", techie_id).eq("status", "pending").execute()
+    return response.data
+
 @app.post("/api/funcs/technician.viewAssignedBookings")
 async def view_assigned_services(techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
     # Select assignments where techie_id matches
@@ -297,6 +320,81 @@ async def view_booking_history(techie_id: str = Depends(verify_technician), sbas
     # For MVP, just return all assignments order by date desc.
     response = await sbase.table("assignment").select("*, service:service_id(*), booking:booking_id(*)").eq("techie_id", techie_id).order("scheduled_at", desc=True).execute()
     return response.data
+
+@app.post("/api/funcs/technician.acceptAssignment")
+async def accept_assignment(data: AssignmentResponseRequest, techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
+    # 1. Verify Request
+    req_res = await sbase.table("assignment_request").select("*").eq("id", data.request_id).eq("techie_id", techie_id).execute()
+    if not req_res.data:
+        raise HTTPException(status_code=404, detail="Assignment request not found or does not belong to you")
+    
+    request = req_res.data[0]
+    
+    if request["status"] != "pending":
+          raise HTTPException(status_code=400, detail="Assignment request is not pending")
+          
+    # 2. Get Booking to get details for Assignment
+    booking_id = request["booking_id"]
+    booking_res = await sbase.table("bookings").select("*").eq("id", booking_id).execute()
+    if not booking_res.data:
+         raise HTTPException(status_code=404, detail="Booking not found")
+    
+    booking = booking_res.data[0]
+    if booking["status"] == "confirmed":
+         return {"message": "Booking already confirmed by another technician"}
+
+    # 3. Create Assignment
+    assignment_data = {
+        "techie_id": techie_id,
+        "service_id": booking["service_id"],
+        "booking_id": booking_id,
+        "scheduled_at": booking["scheduled_at"],
+        "status": "active" # or whatever status we use for active assignment
+    }
+    
+    assign_res = await sbase.table("assignment").insert(assignment_data).execute()
+    
+    if not assign_res.data:
+         raise HTTPException(status_code=500, detail="Failed to create assignment")
+    
+    assignment = assign_res.data[0]
+
+    # 4. Update Request Status -> accepted
+    await sbase.table("assignment_request").update({"status": "accepted"}).eq("id", data.request_id).execute()
+    
+    # 5. Update Booking Status -> confirmed
+    await sbase.table("bookings").update({"status": "confirmed", "assignment_id": assignment["id"]}).eq("id", booking_id).execute()
+    
+    return {"message": "Assignment accepted", "assignment": assignment}
+
+@app.post("/api/funcs/technician.rejectAssignment")
+async def reject_assignment(data: AssignmentResponseRequest, techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
+    # 1. Verify Request
+    req_res = await sbase.table("assignment_request").select("*").eq("id", data.request_id).eq("techie_id", techie_id).execute()
+    if not req_res.data:
+        raise HTTPException(status_code=404, detail="Assignment request not found")
+        
+    request = req_res.data[0]
+    
+    # 2. Update Request Status -> rejected
+    await sbase.table("assignment_request").update({"status": "rejected"}).eq("id", data.request_id).execute()
+    
+    # 3. Trigger next assignment
+    booking_id = request["booking_id"]
+    
+    # Retrieve booking details for re-assignment
+    booking_res = await sbase.table("bookings").select("*").eq("id", booking_id).execute()
+    if booking_res.data:
+        booking = booking_res.data[0]
+        # Attempt to assign to next tech
+        new_assignment = await assign_technician(booking_id, booking["service_id"], booking["scheduled_at"])
+        
+        if not new_assignment:
+            # If no one else found, maybe set booking to 'pending' or 'unfulfilled'
+            await sbase.table("bookings").update({"status": "pending"}).eq("id", booking_id).execute()
+            return {"message": "Assignment rejected. No other technicians available."}
+            
+    return {"message": "Assignment rejected. Re-assignment process triggered."}
 
 @app.post("/api/funcs/service.updateStatus")
 async def update_status(data: UpdateStatusRequest, techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):

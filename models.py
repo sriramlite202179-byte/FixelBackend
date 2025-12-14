@@ -42,6 +42,14 @@ class Booking(BaseModel):
     assignment_id: Optional[int] = None
     status: Optional[str] = "pending"
 
+
+class AssignmentRequest(BaseModel):
+    id: int
+    created_at: datetime
+    booking_id: int
+    techie_id: UUID
+    status: Optional[str] = "pending" # pending, accepted, rejected, expired
+
 class Notification(BaseModel):
     id: int
     created_at: datetime

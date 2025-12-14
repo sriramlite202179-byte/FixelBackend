@@ -45,3 +45,6 @@ class TechnicianRegisterRequest(BaseModel):
 class TechnicianLoginRequest(BaseModel):
     email: str
     password: str
+
+class AssignmentResponseRequest(BaseModel):
+    request_id: int
