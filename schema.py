@@ -5,6 +5,7 @@ class BookServiceRequest(BaseModel):
     service_id: int
     user_id: UUID
     scheduled_at: str
+    sub_service_ids: list[int] = []
 
 class UserRequest(BaseModel):
     user_id: UUID
@@ -48,3 +49,7 @@ class TechnicianLoginRequest(BaseModel):
 
 class AssignmentResponseRequest(BaseModel):
     request_id: int
+
+class RegisterPushTokenRequest(BaseModel):
+    token: str
+    user_type: str # "user" or "technician"

@@ -32,6 +32,7 @@ class Assignment(BaseModel):
     service_id: int # Snake_case
     booking_id: int # Add booking_id
     scheduled_at: Optional[datetime] = None # Snake_case
+    status: Optional[str] = "active"
 
 class Booking(BaseModel):
     id: int
@@ -56,3 +57,48 @@ class Notification(BaseModel):
     user_id: UUID
     title: str
     content: Optional[str] = None
+
+class SubService(BaseModel):
+    id: int
+    created_at: datetime
+    service_id: int
+    name: str
+    price: int
+    description: Optional[str] = None
+
+class BookingItem(BaseModel):
+    id: int
+    created_at: datetime
+    booking_id: int
+    sub_service_id: int
+    price: int
+
+# --- Read/Response Models ---
+
+class SubServiceRead(SubService):
+    pass
+
+class ServiceRead(Service):
+    sub_service: list[SubService] = []
+
+class BookingItemRead(BookingItem):
+    sub_service: Optional[SubService] = None
+
+class AssignmentRead(Assignment):
+    technician: Optional[Technician] = None
+    service: Optional[Service] = None
+    booking: Optional[Booking] = None
+
+class BookingRead(Booking):
+    service: Optional[Service] = None
+    assignment: Optional[AssignmentRead] = None
+    booking_item: list[BookingItemRead] = []
+
+class AssignmentRequestRead(AssignmentRequest):
+    booking: Optional[BookingRead] = None
+
+class BookServiceResponse(BaseModel):
+    booking: Booking
+    assignment: Optional[Assignment] = None
+
+

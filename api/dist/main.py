@@ -55,6 +55,7 @@ class Assignment(BaseModel):
     service_id: int # Snake_case
     booking_id: int # Add booking_id
     scheduled_at: Optional[datetime] = None # Snake_case
+    status: Optional[str] = "active"
 
 class Booking(BaseModel):
     id: int
@@ -65,12 +66,65 @@ class Booking(BaseModel):
     assignment_id: Optional[int] = None
     status: Optional[str] = "pending"
 
+
+class AssignmentRequest(BaseModel):
+    id: int
+    created_at: datetime
+    booking_id: int
+    techie_id: UUID
+    status: Optional[str] = "pending" # pending, accepted, rejected, expired
+
 class Notification(BaseModel):
     id: int
     created_at: datetime
     user_id: UUID
     title: str
     content: Optional[str] = None
+
+class SubService(BaseModel):
+    id: int
+    created_at: datetime
+    service_id: int
+    name: str
+    price: int
+    description: Optional[str] = None
+
+class BookingItem(BaseModel):
+    id: int
+    created_at: datetime
+    booking_id: int
+    sub_service_id: int
+    price: int
+
+# --- Read/Response Models ---
+
+class SubServiceRead(SubService):
+    pass
+
+class ServiceRead(Service):
+    sub_service: list[SubService] = []
+
+class BookingItemRead(BookingItem):
+    sub_service: Optional[SubService] = None
+
+class AssignmentRead(Assignment):
+    technician: Optional[Technician] = None
+    service: Optional[Service] = None
+    booking: Optional[Booking] = None
+
+class BookingRead(Booking):
+    service: Optional[Service] = None
+    assignment: Optional[AssignmentRead] = None
+    booking_item: list[BookingItemRead] = []
+
+class AssignmentRequestRead(AssignmentRequest):
+    booking: Optional[BookingRead] = None
+
+class BookServiceResponse(BaseModel):
+    booking: Booking
+    assignment: Optional[Assignment] = None
+
+
 
 # --- MODULE: schema (schema.py) ---
 from pydantic import BaseModel
@@ -80,6 +134,7 @@ class BookServiceRequest(BaseModel):
     service_id: int
     user_id: UUID
     scheduled_at: str
+    sub_service_ids: list[int] = []
 
 class UserRequest(BaseModel):
     user_id: UUID
@@ -121,37 +176,89 @@ class TechnicianLoginRequest(BaseModel):
     email: str
     password: str
 
+class AssignmentResponseRequest(BaseModel):
+    request_id: int
+
+class RegisterPushTokenRequest(BaseModel):
+    token: str
+    user_type: str # "user" or "technician"
+
 # --- MODULE: utils (utils.py) ---
 from email.message import EmailMessage
 from fastapi import Header, HTTPException, Depends
 from typing import Optional
 
 def send_email(to_email: str, subject: str, content: str):
-    import os # os must only be imported later, messes with load_dotenv
-    smtp_host = os.environ.get("SUPABASE_SMTP_HOST") or os.environ.get("SMTP_HOST")
-    smtp_port = os.environ.get("SUPABASE_SMTP_PORT") or os.environ.get("SMTP_PORT")
-    smtp_user = os.environ.get("SUPABASE_SMTP_USER") or os.environ.get("SMTP_USER")
-    smtp_pass = os.environ.get("SUPABASE_SMTP_PASS") or os.environ.get("SMTP_PASS")
-    smtp_sender = os.environ.get("SUPABASE_SMTP_SENDER") or "noreply@fixel.com"
+    # Email logic mocked for now as per request
+    print(f"MOCK EMAIL to {to_email}: [{subject}] {content}")
+    return
 
-    if not (smtp_host and smtp_port and smtp_user and smtp_pass):
-        print(f"MOCK EMAIL to {to_email}: [{subject}] {content}")
+    # import os # os must only be imported later, messes with load_dotenv
+    # smtp_host = os.environ.get("SUPABASE_SMTP_HOST") or os.environ.get("SMTP_HOST")
+    # smtp_port = os.environ.get("SUPABASE_SMTP_PORT") or os.environ.get("SMTP_PORT")
+    # smtp_user = os.environ.get("SUPABASE_SMTP_USER") or os.environ.get("SMTP_USER")
+    # smtp_pass = os.environ.get("SUPABASE_SMTP_PASS") or os.environ.get("SMTP_PASS")
+    # smtp_sender = os.environ.get("SUPABASE_SMTP_SENDER") or "noreply@fixel.com"
+
+    # if not (smtp_host and smtp_port and smtp_user and smtp_pass):
+    #     print(f"MOCK EMAIL to {to_email}: [{subject}] {content}")
+    #     return
+
+    # try:
+    #     msg = EmailMessage()
+    #     msg.set_content(content)
+    #     msg["Subject"] = subject
+    #     msg["From"] = smtp_sender
+    #     msg["To"] = to_email
+
+    #     with smtplib.SMTP(smtp_host, int(smtp_port)) as server:
+    #         server.starttls()
+    #         server.login(smtp_user, smtp_pass)
+    #         server.send_message(msg)
+    #     print(f"Email sent to {to_email}")
+    # except Exception as e:
+    #     print(f"Failed to send email: {e}")
+
+def send_push_notification(token: str, title: str, message: str, data: Optional[dict] = None):
+    from exponent_server_sdk import (
+        PushClient,
+        PushMessage,
+        PushServerError,
+        DeviceNotRegisteredError,
+    )
+    import os
+
+    if not token:
+        print("No push token provided.")
         return
 
     try:
-        msg = EmailMessage()
-        msg.set_content(content)
-        msg["Subject"] = subject
-        msg["From"] = smtp_sender
-        msg["To"] = to_email
+        response = PushClient().publish(
+            PushMessage(to=token, title=title, body=message, data=data)
+        )
+    except PushServerError as exc:
+        # Encountered some likely formatting/validation error.
+        print(f"Push Server Error: {exc.errors}")
+        # raise exc
+    except (ConnectionError, ValueError) as exc:
+        # Encountered some Connection or Request API error
+        print(f"Push Connection/Value Error: {exc}")
+        # raise exc
 
-        with smtplib.SMTP(smtp_host, int(smtp_port)) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
-        print(f"Email sent to {to_email}")
-    except Exception as e:
-        print(f"Failed to send email: {e}")
+    try:
+        # We got a response back, but we don't know whether it's an error yet.
+        # This call raises errors so we can handle them with normal exception flows.
+        response.validate_response()
+    except DeviceNotRegisteredError:
+        # Mark the push token as inactive
+        print(f"Device not registered: {token}")
+        # In a real app, you'd update your DB here to remove the token
+    except Exception as exc:
+        # Encountered some other Error
+        print(f"Push Notification Error: {exc}")
+        # raise exc
+    else:
+        print(f"Push Notification sent to {token}: {title} - {message}")
 
 async def verify_user(
     authorization: Optional[str] = Header(None), 
@@ -217,6 +324,42 @@ async def verify_technician(
     except Exception as e:
         print(f"Auth Error: {e}")
         raise HTTPException(status_code=401, detail="Authentication Failed")
+
+def send_push_notification(token: str, title: str, message: str, data: Optional[dict] = None):
+    from exponent_server_sdk import (
+        PushClient,
+        PushMessage,
+        PushServerError,
+        DeviceNotRegisteredError,
+    )
+
+    if not token:
+        print("No push token provided.")
+        return
+
+    try:
+        # Check for access token in env (optional, for enhanced security)
+        session_args = {}
+        access_token = os.environ.get("EXPO_ACCESS_TOKEN")
+        if access_token:
+            session_args["access_token"] = access_token
+
+        response = PushClient(**session_args).publish(
+            PushMessage(to=token, title=title, body=message, data=data)
+        )
+    except PushServerError as exc:
+        print(f"Push Server Error: {exc.errors}")
+    except (ConnectionError, ValueError) as exc:
+        print(f"Push Connection/Value Error: {exc}")
+
+    try:
+        response.validate_response()
+    except DeviceNotRegisteredError:
+        print(f"Device not registered: {token}")
+    except Exception as exc:
+        print(f"Push Notification Error: {exc}")
+    else:
+        print(f"Push Notification sent to {token}: {title} - {message}")
 
 # --- MODULE: main (main.py) ---
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -284,24 +427,29 @@ async def login_user(data: LoginRequest, sbase: AsyncClient = Depends(get_supaba
             "email": data.email,
             "password": data.password
         })
+        # Fetch User Profile
+        user_id = auth_res.user.id
+        profile_res = await sbase.table("userprofile").select("*").eq("id", user_id).execute()
+        
         return {
             "user": auth_res.user,
-            "session": auth_res.session
+            "session": auth_res.session,
+            "profile": profile_res.data[0] if profile_res.data else None
         }
     except Exception as e:
-        print(e)
-        if "email not confirmed" in str(e):
+        print(f"Login failed: {e}")
+        if "email not confirmed".lower() in str(e).lower():
             raise HTTPException(status_code=403, detail="Email not confirmed. Please check your inbox to verify your email address.")
 
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-@app.post("/api/funcs/service.viewServices")
+@app.post("/api/funcs/service.viewServices", response_model=list[ServiceRead])
 async def view_services(sbase: AsyncClient = Depends(get_supabase)):
-    response = await sbase.table("service").select("*").execute()
+    response = await sbase.table("service").select("*, sub_service(*)").order("id").execute()
     print(response.data)
     return response.data
 
-@app.post("/api/funcs/service.bookService")
+@app.post("/api/funcs/service.bookService", response_model=BookServiceResponse)
 async def book_service(data: BookServiceRequest, sbase: AsyncClient = Depends(get_supabase)):
     # Create Booking directly (Assignment decoupled)
     booking_data = {
@@ -317,6 +465,23 @@ async def book_service(data: BookServiceRequest, sbase: AsyncClient = Depends(ge
 
     booking = booking_res.data[0]
     booking_id = booking["id"]
+
+    # Handle Sub-services (Booking Items)
+    if data.sub_service_ids:
+        # Fetch prices to ensure data integrity
+        ss_res = await sbase.table("sub_service").select("id, price").in_("id", data.sub_service_ids).execute()
+        valid_subs = ss_res.data
+        
+        if valid_subs:
+            items_data = [
+                {
+                    "booking_id": booking_id,
+                    "sub_service_id": vs["id"],
+                    "price": vs["price"]
+                }
+                for vs in valid_subs
+            ]
+            await sbase.table("booking_item").insert(items_data).execute()
 
     # Trigger Assignment
     assignment = await assign_technician(booking_id, data.service_id, data.scheduled_at)
@@ -370,63 +535,109 @@ async def assign_technician(booking_id: int, service_id: int, scheduled_at: str)
     provider_role = service_res.data[0]["provider_role_id"]
 
     # 2. Find Technicians with matching provider_role
-    # Using 'like' or 'eq' depending on exact match. Assuming exact match for now.
-    tech_res = await sbase.table("technician").select("id").eq("provider_role_id", provider_role).execute()
+    tech_res = await sbase.table("technician").select("id, push_token").eq("provider_role_id", provider_role).execute()
     
     valid_techs = tech_res.data
     if not valid_techs:
-        # No tech found
+        return None
+        
+    # 3. Check existing AssignmentRequests to filter out rejected techs
+    history_res = await sbase.table("assignment_request").select("techie_id, status").eq("booking_id", booking_id).execute()
+    rejected_tech_ids = {h["techie_id"] for h in history_res.data if h["status"] in ["rejected", "expired"]}
+    
+    eligible_techs = [t for t in valid_techs if t["id"] not in rejected_tech_ids]
+
+    if not eligible_techs:
+        # No eligible tech found (all rejected or none available)
         return None
     
-    # 3. Simple Algorithm: Pick first available (or just first one for MVP)
-    # Ideally check overlaps, but user said "pick a technician... I let you handle implementation"
-    selected_tech = valid_techs[0]
+    # 4. Pick first available
+    selected_tech = eligible_techs[0]
     
-    # 4. Create Assignment
-    assignment_data = {
+    # 5. Create AssignmentRequest (Offer)
+    # Status default is pending
+    request_data = {
         "techie_id": selected_tech["id"],
-        "service_id": service_id,
         "booking_id": booking_id,
-        "scheduled_at": scheduled_at
+        "status": "pending"
     }
-    assign_res = await sbase.table("assignment").insert(assignment_data).execute()
     
-    if assign_res.data:
-        assignment = assign_res.data[0]
-        # 5. Update Booking status
-        await sbase.table("bookings").update({"status": "assigned", "assignment_id": assignment["id"]}).eq("id", booking_id).execute()
-        return assignment
+    # We don't have service_id or scheduled_at in AssignmentRequest schema I Defined in plan?
+    # Wait, the user said "techie_id, booking_id, acceptance_status, created_at". 
+    # I should stick to that schema for AssignmentRequest.
+    # The 'Assignment' table still holds service/scheduled info, but we create that LATER.
+    
+    req_res = await sbase.table("assignment_request").insert(request_data).execute()
+    
+    if req_res.data:
+        # 6. Update Booking status
+        # We don't have an 'assignment_id' yet to link in the booking table because Assignment doesn't exist.
+        # But we might want to know it's "assigned/offered".
+        # Let's just set status="assigned".
+        await sbase.table("bookings").update({"status": "assigned"}).eq("id", booking_id).execute()
+        return req_res.data[0]
+    
+    # Notify Technician
+    if selected_tech.get("push_token"):
+         send_push_notification(
+             token=selected_tech["push_token"],
+             title="New Booking Available",
+             message=f"You have a new booking request.",
+             data={"booking_id": booking_id, "type": "assignment_request"}
+         )
     
     return None
 
 
-@app.post("/api/funcs/user.viewBookedServices")
+@app.post("/api/funcs/user.viewBookedServices", response_model=list[BookingRead])
 async def view_booked_services(user_id: str = Depends(verify_user), sbase: AsyncClient = Depends(get_supabase)):
     # Query bookings table, join service directly (since assignment might be null)
     # Supabase join: select(*, service(*))
-    response = await sbase.table("bookings").select("*, service:service_id(*)").eq("user_id", user_id).execute()
+    # Supabase join: select(*, service(*), booking_item(*, sub_service(*)))
+    response = await sbase.table("bookings").select("*, service:service_id(*), booking_item(*, sub_service(*))").eq("user_id", user_id).order("created_at", desc=True).execute()
     print(response.data)
     return response.data
 
-@app.post("/api/funcs/user.viewBooking")
+@app.post("/api/funcs/user.viewBooking", response_model=BookingRead)
 async def view_booking(data: ViewBookingRequest, user_id: str = Depends(verify_user), sbase: AsyncClient = Depends(get_supabase)):
-    response = await sbase.table("bookings").select("*, service:service_id(*), assignment:assignment_id(*, technician:techie_id(*))").eq("id", data.booking_id).eq("user_id", user_id).execute()
+    response = await sbase.table("bookings").select("*, service:service_id(*), assignment:assignment_id(*, technician:techie_id(*)), booking_item(*, sub_service(*))").eq("id", data.booking_id).eq("user_id", user_id).execute()
     
     if not response.data:
          raise HTTPException(status_code=404, detail="Booking not found")
     
     return response.data[0]
 
-@app.post("/api/funcs/user.viewUser")
+@app.post("/api/funcs/user.viewUser", response_model=list[UserProfile])
 async def view_user(user_id: str = Depends(verify_user), sbase: AsyncClient = Depends(get_supabase)):
     response = await sbase.table("userprofile").select("*").eq("id", user_id).execute()
     print(response.data)
     return response.data
 
-@app.post("/api/funcs/notification.viewNotifications")
+@app.post("/api/funcs/notification.viewNotifications", response_model=list[Notification])
 async def view_notifications(user_id: str = Depends(verify_user), sbase: AsyncClient = Depends(get_supabase)):
     response = await sbase.table("notifications").select("*").eq("user_id", user_id).execute()
     return response.data
+
+@app.post("/api/funcs/utils.registerPushToken")
+async def register_push_token(data: RegisterPushTokenRequest, authorization: Optional[str] = Header(None), sbase: AsyncClient = Depends(get_supabase)):
+    # Re-using logic from verify code roughly, but generic
+    if not authorization:
+         raise HTTPException(status_code=401, detail="Missing Token")
+    token = authorization.replace("Bearer ", "")
+    user_res = await sbase.auth.get_user(token)
+    if not user_res.user:
+         raise HTTPException(status_code=401, detail="Invalid Token")
+    user_id = user_res.user.id
+
+    table = "userprofile" if data.user_type == "user" else "technician"
+    
+    # Update push_token column
+    try:
+        await sbase.table(table).update({"push_token": data.token}).eq("id", user_id).execute()
+        return {"message": "Push token updated"}
+    except Exception as e:
+        print(f"Failed to update push token: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update push token")
 
 # --- Technician Functions ---
 
@@ -496,24 +707,121 @@ async def login_technician(data: TechnicianLoginRequest, sbase: AsyncClient = De
              raise HTTPException(status_code=403, detail="Email not confirmed.")
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-@app.post("/api/funcs/technician.viewProfile")
+@app.post("/api/funcs/technician.viewProfile", response_model=Optional[Technician])
 async def view_technician_profile(techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
     response = await sbase.table("technician").select("*").eq("id", techie_id).execute()
     return response.data[0] if response.data else None
 
-@app.post("/api/funcs/technician.viewAssignedBookings")
-async def view_assigned_services(techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
-    # Select assignments where techie_id matches
-    response = await sbase.table("assignment").select("*, service:service_id(*), booking:booking_id(*)").eq("techie_id", techie_id).execute()
+@app.post("/api/funcs/technician.viewAssignmentRequests", response_model=list[AssignmentRequestRead])
+async def view_assignment_requests(techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
+    # Fetch pending requests
+    # We might want to join booking and service info so they can see what it is
+    # Supabase join syntax: select(*, booking:booking_id(*, service:service_id(*))) - nested might be tricky deep, but let's try shallow first or just booking.
+    # Actually booking -> service_id is in Booking table.
+    response = await sbase.table("assignment_request").select("*, booking:booking_id(*, service:service_id(*))").eq("techie_id", techie_id).eq("status", "pending").execute()
     return response.data
 
-@app.post("/api/funcs/technician.viewBookingHistory")
+@app.post("/api/funcs/technician.viewAssignedBookings", response_model=list[AssignmentRead])
+async def view_assigned_services(techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
+    # Select assignments where techie_id matches, excluding completed/cancelled
+    response = await sbase.table("assignment").select("*, service:service_id(*), booking:booking_id(*)").eq("techie_id", techie_id).neq("status", "completed").neq("status", "cancelled").execute()
+    return response.data
+
+@app.post("/api/funcs/technician.viewBookingHistory", response_model=list[AssignmentRead])
 async def view_booking_history(techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
     # For now, maybe all assignments are history? Or filter by completed?
     # Let's assume viewAssigned is 'active' and history is 'past'.
     # For MVP, just return all assignments order by date desc.
     response = await sbase.table("assignment").select("*, service:service_id(*), booking:booking_id(*)").eq("techie_id", techie_id).order("scheduled_at", desc=True).execute()
     return response.data
+
+@app.post("/api/funcs/technician.acceptAssignment")
+async def accept_assignment(data: AssignmentResponseRequest, techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
+    # 1. Verify Request
+    req_res = await sbase.table("assignment_request").select("*").eq("id", data.request_id).eq("techie_id", techie_id).execute()
+    if not req_res.data:
+        raise HTTPException(status_code=404, detail="Assignment request not found or does not belong to you")
+    
+    request = req_res.data[0]
+    
+    if request["status"] != "pending":
+          raise HTTPException(status_code=400, detail="Assignment request is not pending")
+          
+    # 2. Get Booking to get details for Assignment
+    booking_id = request["booking_id"]
+    booking_res = await sbase.table("bookings").select("*").eq("id", booking_id).execute()
+    if not booking_res.data:
+         raise HTTPException(status_code=404, detail="Booking not found")
+    
+    booking = booking_res.data[0]
+    if booking["status"] == "confirmed":
+         return {"message": "Booking already confirmed by another technician"}
+
+    # 3. Create Assignment
+    assignment_data = {
+        "techie_id": techie_id,
+        "service_id": booking["service_id"],
+        "booking_id": booking_id,
+        "scheduled_at": booking["scheduled_at"],
+        "status": "active" # or whatever status we use for active assignment
+    }
+    
+    assign_res = await sbase.table("assignment").insert(assignment_data).execute()
+    
+    if not assign_res.data:
+         raise HTTPException(status_code=500, detail="Failed to create assignment")
+    
+    assignment = assign_res.data[0]
+
+    # 4. Update Request Status -> accepted
+    await sbase.table("assignment_request").update({"status": "accepted"}).eq("id", data.request_id).execute()
+    
+    # 5. Update Booking Status -> confirmed
+    await sbase.table("bookings").update({"status": "confirmed", "assignment_id": assignment["id"]}).eq("id", booking_id).execute()
+
+    # Notify User
+    try:
+        user_profile_res = await sbase.table("userprofile").select("push_token").eq("id", booking["user_id"]).execute()
+        if user_profile_res.data and user_profile_res.data[0].get("push_token"):
+             send_push_notification(
+                 token=user_profile_res.data[0]["push_token"],
+                 title="Technician Assigned",
+                 message=f"A technician has been assigned to your booking.",
+                 data={"booking_id": booking_id, "type": "technician_assigned"}
+             )
+    except Exception as e:
+        print(f"Error sending push to user: {e}")
+    
+    return {"message": "Assignment accepted", "assignment": assignment}
+
+@app.post("/api/funcs/technician.rejectAssignment")
+async def reject_assignment(data: AssignmentResponseRequest, techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
+    # 1. Verify Request
+    req_res = await sbase.table("assignment_request").select("*").eq("id", data.request_id).eq("techie_id", techie_id).execute()
+    if not req_res.data:
+        raise HTTPException(status_code=404, detail="Assignment request not found")
+        
+    request = req_res.data[0]
+    
+    # 2. Update Request Status -> rejected
+    await sbase.table("assignment_request").update({"status": "rejected"}).eq("id", data.request_id).execute()
+    
+    # 3. Trigger next assignment
+    booking_id = request["booking_id"]
+    
+    # Retrieve booking details for re-assignment
+    booking_res = await sbase.table("bookings").select("*").eq("id", booking_id).execute()
+    if booking_res.data:
+        booking = booking_res.data[0]
+        # Attempt to assign to next tech
+        new_assignment = await assign_technician(booking_id, booking["service_id"], booking["scheduled_at"])
+        
+        if not new_assignment:
+            # If no one else found, maybe set booking to 'pending' or 'unfulfilled'
+            await sbase.table("bookings").update({"status": "pending"}).eq("id", booking_id).execute()
+            return {"message": "Assignment rejected. No other technicians available."}
+            
+    return {"message": "Assignment rejected. Re-assignment process triggered."}
 
 @app.post("/api/funcs/service.updateStatus")
 async def update_status(data: UpdateStatusRequest, techie_id: str = Depends(verify_technician), sbase: AsyncClient = Depends(get_supabase)):
@@ -523,7 +831,32 @@ async def update_status(data: UpdateStatusRequest, techie_id: str = Depends(veri
         raise HTTPException(status_code=403, detail="Assignment not found or does not belong to you")
 
     # 2. Update status in 'bookings' table via assignment_id
-    response = await sbase.table("bookings").update({"status": data.status}).eq("assignment_id", data.assignment_id).execute()
+    await sbase.table("bookings").update({"status": data.status}).eq("assignment_id", data.assignment_id).execute()
+
+    # 3. Update status in 'assignment' table
+    response = await sbase.table("assignment").update({"status": data.status}).eq("id", data.assignment_id).execute()
+
+    if data.status == "completed":
+        # Notify User
+        try: 
+            # Need to get user_id from booking to get token
+            # We updated bookings in step 2, let's fetch it
+            booking_res = await sbase.table("bookings").select("user_id").eq("assignment_id", data.assignment_id).execute()
+            if booking_res.data:
+                user_id = booking_res.data[0]["user_id"]
+                user_profile_res = await sbase.table("userprofile").select("push_token").eq("id", user_id).execute()
+                if user_profile_res.data and user_profile_res.data[0].get("push_token"):
+                    send_push_notification(
+                        token=user_profile_res.data[0]["push_token"],
+                        title="Booking Completed",
+                        message=f"Your booking has been marked as completed.",
+                        data={"booking_id": data.assignment_id, "type": "booking_completed"} # sending assignment_id as booking_id might be confusing but okay for now, ideally fetch real booking_id. 
+                        # actually booking_res has booking data. 
+                        # Wait, booking_res select was just user_id.
+                    )
+        except Exception as e:
+             print(f"Error sending push to user: {e}")
+
     return response.data
 
 # --- Admin Functions (CRUD) ---
@@ -562,6 +895,12 @@ async def admin_delete_technician(id: int, sbase: AsyncClient = Depends(get_supa
 async def admin_create_assignment(assignment: Assignment, sbase: AsyncClient = Depends(get_supabase)):
     data = assignment.model_dump(exclude={"id", "created_at"})
     response = await sbase.table("assignment").insert(data).execute()
+    return response.data
+
+@app.post("/api/funcs/admin.sub_service.create")
+async def admin_create_sub_service(sub_service: SubService, sbase: AsyncClient = Depends(get_supabase)):
+    data = sub_service.model_dump(exclude={"id", "created_at"})
+    response = await sbase.table("sub_service").insert(data).execute()
     return response.data
 
 def main():

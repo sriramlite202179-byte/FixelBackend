@@ -218,8 +218,12 @@ def test_login_technician(client, mock_supabase):
 def test_view_assigned_services(client, mock_supabase):
     tech_uuid = str(uuid4())
     mock_data = [{"id": 50, "service": {"name": "AC Repair"}}]
-    # Mocking chain: select(...).eq("techie_id", ...).execute()
-    mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value.data = mock_data
+    # Mocking chain: select(...).eq("techie_id", ...).neq("status", "completed").neq("status", "cancelled").execute()
+    mock_select = mock_supabase.table.return_value.select.return_value
+    mock_eq_tech = mock_select.eq.return_value
+    mock_neq_completed = mock_eq_tech.neq.return_value
+    mock_neq_cancelled = mock_neq_completed.neq.return_value
+    mock_neq_cancelled.execute.return_value.data = mock_data
 
     app.dependency_overrides[verify_technician] = lambda: tech_uuid
 
@@ -228,6 +232,11 @@ def test_view_assigned_services(client, mock_supabase):
 
     assert response.status_code == 200
     assert response.json() == mock_data
+    
+    # Verify chain calls (optional but good for regression)
+    mock_select.eq.assert_called_with("techie_id", tech_uuid)
+    mock_eq_tech.neq.assert_called_with("status", "completed")
+    mock_neq_completed.neq.assert_called_with("status", "cancelled")
 
 def test_update_status(client, mock_supabase):
     tech_uuid = str(uuid4())
@@ -247,8 +256,11 @@ def test_update_status(client, mock_supabase):
     # 1. Verify Assignment Ownership
     mock_assignment_table.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = [{"id": 100}]
     
-    # 2. Update Status
+    # 2. Update Booking Status
     mock_booking_table.update.return_value.eq.return_value.execute.return_value.data = [{"id": 100, "status": "completed"}]
+
+    # 3. Update Assignment Status
+    mock_assignment_table.update.return_value.eq.return_value.execute.return_value.data = [{"id": 100, "status": "completed"}]
 
     app.dependency_overrides[verify_technician] = lambda: tech_uuid
     
@@ -258,6 +270,10 @@ def test_update_status(client, mock_supabase):
     
     assert response.status_code == 200
     assert response.json()[0]["status"] == "completed"
+    
+    # Verify mapping calls
+    mock_booking_table.update.assert_called_with({"status": "completed"})
+    mock_assignment_table.update.assert_called_with({"status": "completed"})
 
 
 def test_view_assignment_requests(client, mock_supabase):
