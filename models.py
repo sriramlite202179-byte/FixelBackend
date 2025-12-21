@@ -99,6 +99,6 @@ class AssignmentRequestRead(AssignmentRequest):
 
 class BookServiceResponse(BaseModel):
     booking: Booking
-    assignment: Optional[Assignment] = None
+
 
 

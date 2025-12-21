@@ -141,8 +141,7 @@ async def book_service(data: BookServiceRequest, sbase: AsyncClient = Depends(ge
     #          send_email(user_email, "Technician Assigned", f"A technician has been assigned to your booking (ID: {booking_id}).")
 
     return {
-        "booking": booking,
-        "assignment": assignment
+        "booking": booking
     }
 
     # Notify User (Booking Received)
@@ -281,7 +280,7 @@ async def assign_technician(booking_id: int, service_id: int, scheduled_at: str)
         # We don't have an 'assignment_id' yet to link in the booking table because Assignment doesn't exist.
         # But we might want to know it's "assigned/offered".
         # Let's just set status="assigned".
-        await sbase.table("bookings").update({"status": "assigned"}).eq("id", booking_id).execute()
+        # await sbase.table("bookings").update({"status": "assigned"}).eq("id", booking_id).execute()
         return req_res.data[0]
     
     # Notify Technician

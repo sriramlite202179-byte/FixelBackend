@@ -59,8 +59,7 @@ This document outlines the API endpoints for the Fixel Backend.
 **Response:**
 ```json
 {
-    "booking": { ... },
-    "assignment": { ... } // Optional, if auto-assigned
+    "booking": { ... }
 }
 ```
 
