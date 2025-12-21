@@ -145,6 +145,16 @@ async def book_service(data: BookServiceRequest, sbase: AsyncClient = Depends(ge
         "assignment": assignment
     }
 
+    # Notify User (Booking Received)
+    # Use helper to persist and send
+    await send_notification_async(
+        sbase,
+        user_id=booking_res.data[0]["user_id"], # Ensure we have user_id string
+        title="Booking Received",
+        message=f"Your booking (ID: {booking_id}) has been received.",
+        data={"booking_id": booking_id, "type": "booking_received"}
+    )
+
 @app.post("/api/funcs/user.cancelBooking")
 async def cancel_booking(data: CancelBookingRequest, user_id: str = Depends(verify_user), sbase: AsyncClient = Depends(get_supabase)):
     # 1. Verify booking exists and belongs to user
@@ -164,7 +174,64 @@ async def cancel_booking(data: CancelBookingRequest, user_id: str = Depends(veri
     if not update_res.data:
         raise HTTPException(status_code=500, detail="Failed to cancel booking")
 
+    # Notify User about cancellation confirmation (optional but good)
+    await send_notification_async(
+        sbase,
+        user_id=user_id,
+        title="Booking Cancelled",
+        message=f"your booking (ID: {data.booking_id}) has been cancelled successfully.",
+        data={"booking_id": data.booking_id, "type": "booking_cancelled"}
+    )
+
+    # Notify Technician if assigned
+    if booking.get("assignment_id"):
+        # Fetch technician ID from assignment
+        assign_res = await sbase.table("assignment").select("techie_id").eq("id", booking["assignment_id"]).execute()
+        if assign_res.data:
+            tech_id = assign_res.data[0]["techie_id"]
+            await send_notification_async(
+                sbase,
+                user_id=tech_id,
+                title="Booking Cancelled",
+                message=f"Booking (ID: {data.booking_id}) has been cancelled by the user.",
+                data={"booking_id": data.booking_id, "type": "booking_cancelled"}
+            )
+            # Also update assignment status to cancelled if not done automatically (Assuming logic handles it or we should too)
+            # Schema says assignment references booking. Usually we should cancel assignment too.
+            await sbase.table("assignment").update({"status": "cancelled"}).eq("id", booking["assignment_id"]).execute()
+
     return {"message": "Booking cancelled successfully", "booking": update_res.data[0]}
+
+async def send_notification_async(sbase: AsyncClient, user_id: UUID | str, title: str, message: str, data: Optional[dict] = None, token: Optional[str] = None):
+    # 1. Persist to DB
+    try:
+        notif_data = {
+            "user_id": str(user_id),
+            "title": title,
+            "content": message
+        }
+        await sbase.table("notifications").insert(notif_data).execute()
+    except Exception as e:
+        print(f"Failed to persist notification for {user_id}: {e}")
+
+    # 2. Get Token if missing
+    if not token:
+        try:
+             # Try UserProfile first
+             res = await sbase.table("userprofile").select("push_token").eq("id", str(user_id)).execute()
+             if res.data and res.data[0].get("push_token"):
+                 token = res.data[0]["push_token"]
+             else:
+                 # Try Technician
+                 res_tech = await sbase.table("technician").select("push_token").eq("id", str(user_id)).execute()
+                 if res_tech.data and res_tech.data[0].get("push_token"):
+                     token = res_tech.data[0]["push_token"]
+        except Exception as e:
+            print(f"Failed to fetch token for {user_id}: {e}")
+
+    # 3. Send Push
+    if token:
+        send_push_notification(token, title, message, data)
 
 async def assign_technician(booking_id: int, service_id: int, scheduled_at: str):
     sbase = await get_supabase()
@@ -219,11 +286,13 @@ async def assign_technician(booking_id: int, service_id: int, scheduled_at: str)
     
     # Notify Technician
     if selected_tech.get("push_token"):
-         send_push_notification(
-             token=selected_tech["push_token"],
+         await send_notification_async(
+             sbase,
+             user_id=selected_tech["id"],
              title="New Booking Available",
              message=f"You have a new booking request.",
-             data={"booking_id": booking_id, "type": "assignment_request"}
+             data={"booking_id": booking_id, "type": "assignment_request"},
+             token=selected_tech["push_token"]
          )
     
     return None
@@ -431,14 +500,14 @@ async def accept_assignment(data: AssignmentResponseRequest, techie_id: str = De
 
     # Notify User
     try:
-        user_profile_res = await sbase.table("userprofile").select("push_token").eq("id", booking["user_id"]).execute()
-        if user_profile_res.data and user_profile_res.data[0].get("push_token"):
-             send_push_notification(
-                 token=user_profile_res.data[0]["push_token"],
-                 title="Technician Assigned",
-                 message=f"A technician has been assigned to your booking.",
-                 data={"booking_id": booking_id, "type": "technician_assigned"}
-             )
+        # User ID is in booking["user_id"]
+        await send_notification_async(
+            sbase,
+            user_id=booking["user_id"],
+            title="Technician Assigned",
+            message=f"A technician has been assigned to your booking.",
+            data={"booking_id": booking_id, "type": "technician_assigned"}
+        )
     except Exception as e:
         print(f"Error sending push to user: {e}")
     
@@ -490,20 +559,34 @@ async def update_status(data: UpdateStatusRequest, techie_id: str = Depends(veri
         # Notify User
         try: 
             # Need to get user_id from booking to get token
-            # We updated bookings in step 2, let's fetch it
             booking_res = await sbase.table("bookings").select("user_id").eq("assignment_id", data.assignment_id).execute()
             if booking_res.data:
                 user_id = booking_res.data[0]["user_id"]
-                user_profile_res = await sbase.table("userprofile").select("push_token").eq("id", user_id).execute()
-                if user_profile_res.data and user_profile_res.data[0].get("push_token"):
-                    send_push_notification(
-                        token=user_profile_res.data[0]["push_token"],
-                        title="Booking Completed",
-                        message=f"Your booking has been marked as completed.",
-                        data={"booking_id": data.assignment_id, "type": "booking_completed"} # sending assignment_id as booking_id might be confusing but okay for now, ideally fetch real booking_id. 
-                        # actually booking_res has booking data. 
-                        # Wait, booking_res select was just user_id.
-                    )
+                
+                await send_notification_async(
+                    sbase,
+                    user_id=user_id,
+                    title="Booking Completed",
+                    message="Your booking has been marked as completed.",
+                    data={"booking_id": data.assignment_id, "type": "booking_completed"}
+                )
+        except Exception as e:
+             print(f"Error sending push to user: {e}")
+
+    elif data.status == "cancelled":
+         # Notify User
+        try: 
+            booking_res = await sbase.table("bookings").select("user_id").eq("assignment_id", data.assignment_id).execute()
+            if booking_res.data:
+                user_id = booking_res.data[0]["user_id"]
+                
+                await send_notification_async(
+                    sbase,
+                    user_id=user_id,
+                    title="Booking Cancelled",
+                    message="Your booking has been cancelled by the technician.",
+                    data={"booking_id": data.assignment_id, "type": "booking_cancelled"}
+                )
         except Exception as e:
              print(f"Error sending push to user: {e}")
 
