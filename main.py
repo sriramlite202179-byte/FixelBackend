@@ -5,11 +5,11 @@ from email.message import EmailMessage
 from pydantic import BaseModel
 from typing import List, Optional, Any, Dict
 from models import Service, Assignment, Technician, UserProfile, Booking, Notification, AssignmentRequest, SubService, BookingItem, ServiceRead, BookingRead, AssignmentRead, BookingItemRead, SubServiceRead, AssignmentRequestRead, BookServiceResponse
-from schema import BookServiceRequest, UserRequest, TechnicianRequest, UpdateStatusRequest, LoginRequest, RegisterRequest, ViewBookingRequest, CancelBookingRequest, TechnicianRegisterRequest, TechnicianLoginRequest, AssignmentResponseRequest, RegisterPushTokenRequest
+from schema import BookServiceRequest, UserRequest, TechnicianRequest, UpdateStatusRequest, LoginRequest, RegisterRequest, ViewBookingRequest, CancelBookingRequest, TechnicianRegisterRequest, TechnicianLoginRequest, AssignmentResponseRequest, RegisterPushTokenRequest, TestNotificationRequest
 from db import get_supabase, AsyncClient
 from uuid import UUID
 from utils import send_email, verify_user, verify_technician, send_push_notification
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Header
 
 app = FastAPI(title="Fixel Backend", docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 
@@ -278,6 +278,16 @@ async def register_push_token(data: RegisterPushTokenRequest, authorization: Opt
     except Exception as e:
         print(f"Failed to update push token: {e}")
         raise HTTPException(status_code=500, detail="Failed to update push token")
+
+@app.post("/api/funcs/utils.testNotification")
+async def test_notification(data: TestNotificationRequest):
+    send_push_notification(
+        token=data.token,
+        title=data.title,
+        message=data.message,
+        data=data.data
+    )
+    return {"message": "Notification sent (or attempted)"}
 
 # --- Technician Functions ---
 

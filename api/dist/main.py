@@ -183,6 +183,12 @@ class RegisterPushTokenRequest(BaseModel):
     token: str
     user_type: str # "user" or "technician"
 
+class TestNotificationRequest(BaseModel):
+    token: str
+    title: str = "Test Notification"
+    message: str = "This is a test notification"
+    data: dict | None = None
+
 # --- MODULE: utils (utils.py) ---
 from email.message import EmailMessage
 from fastapi import Header, HTTPException, Depends
@@ -638,6 +644,16 @@ async def register_push_token(data: RegisterPushTokenRequest, authorization: Opt
     except Exception as e:
         print(f"Failed to update push token: {e}")
         raise HTTPException(status_code=500, detail="Failed to update push token")
+
+@app.post("/api/funcs/utils.testNotification")
+async def test_notification(data: TestNotificationRequest):
+    send_push_notification(
+        token=data.token,
+        title=data.title,
+        message=data.message,
+        data=data.data
+    )
+    return {"message": "Notification sent (or attempted)"}
 
 # --- Technician Functions ---
 

@@ -1,3 +1,4 @@
+import os
 from email.message import EmailMessage
 from fastapi import Header, HTTPException, Depends
 from db import get_supabase, AsyncClient

@@ -53,3 +53,9 @@ class AssignmentResponseRequest(BaseModel):
 class RegisterPushTokenRequest(BaseModel):
     token: str
     user_type: str # "user" or "technician"
+
+class TestNotificationRequest(BaseModel):
+    token: str
+    title: str = "Test Notification"
+    message: str = "This is a test notification"
+    data: dict | None = None
